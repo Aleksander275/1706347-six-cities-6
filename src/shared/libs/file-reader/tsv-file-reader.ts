@@ -1,78 +1,41 @@
-import { readFileSync } from "node:fs";
-import { FileReader } from "./file-reader.interface.js";
-import { Offer } from "../../types/offer.types.js";
-import { City } from "../../types/city.types.js";
-import { HouseType } from "../../types/houseTypes.types.js";
-import { Comfort } from "../../types/comfort.types.js";
+import EventEmitter from 'node:events';
+import { createReadStream } from 'node:fs';
+import { FileReader } from './file-reader.interface.js';
 
-export class TSVFileReader implements FileReader {
+const CHUNK_SIZE = 16384;
+
+export class TSVFileReader extends EventEmitter implements FileReader {
   private rawData = '';
 
   constructor (
     private readonly filename: string
-  ) {}
-
-  public read(): void {
-    this.rawData = readFileSync(this.filename, { encoding: 'utf-8' });
+  ) {
+    super();
   }
 
-  public toArray (): Offer[] {
-    if (!this.rawData) {
-      throw new Error('File was not read');
+  public async read(): Promise<void> {
+    const readStream = createReadStream(this.filename,{
+      highWaterMark: CHUNK_SIZE,
+      encoding: 'utf-8'
+    });
+
+    let remainingData = '';
+    let nextLinePosition = -1;
+    let importedRowCount = 0;
+
+    for await (const chunk of readStream) {
+      remainingData += chunk.toString();
+
+      while ((nextLinePosition = remainingData.indexOf('\n')) >= 0) {
+        const completeRow = remainingData.slice(0, nextLinePosition + 1);
+        remainingData = remainingData.slice(++nextLinePosition);
+        importedRowCount++;
+
+        this.emit('line', completeRow);
+      }
     }
 
-    return this.rawData
-      .split('\n')
-      .filter((row) => row.trim().length > 0)
-      .map((line) => line.split('\t'))
-      .map(([
-        id,
-        offerName,
-        offerDesc,
-        publicDate,
-        city,
-        previewImage,
-        foto,
-        isPrem,
-        isFavorit,
-        rating,
-        typeHouse,
-        countRooms,
-        countGuests,
-        cost,
-        comfort,
-        afterOffer,
-        commentCount,
-        location
-      ]) => ({
-        id,
-        offerName,
-        offerDesc,
-        publicDate: new Date(publicDate),
-        city: city as City,
-        previewImage,
-        foto: foto.split(';'),
-        isPrem: !!isPrem,
-        isFavorit: !!isFavorit,
-        rating: +rating,
-        typeHouse: typeHouse as HouseType,
-        countRooms: +countRooms,
-        countGuests: +countGuests,
-        cost: +cost,
-        comfort: comfort.split(';') as Comfort[],
-        afterOffer: {
-          name: afterOffer.split(';')[0],
-          type: afterOffer.split(';')[1] as 'Pro ' | 'Standard',
-          avatarUrl: afterOffer.split(';')[2],
-          email: afterOffer.split(';')[3],
-          password: afterOffer.split(';')[4],
-        },
-        commentCount: +commentCount,
-        location: {
-          latitude: +location.split(';')[0],
-          longitude: +location.split(';')[1],
-        }
-      }))
+    this.emit('end', importedRowCount);
   }
 }
 
