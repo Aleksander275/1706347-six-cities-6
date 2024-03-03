@@ -5,3 +5,4 @@ export * from './location.types.js';
 export * from './mock-server-data.type.js';
 export * from './offer.types.js';
 export * from './userInfo.types.js';
+export * from './component.enum.js';
